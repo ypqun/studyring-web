@@ -1,0 +1,41 @@
+rules_version = '2';
+
+// Firebase 콘솔 > Firestore Database > 규칙(Rules) 탭에 아래 내용을 붙여넣으세요.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isMember(studyData) {
+      return isSignedIn() && request.auth.uid in studyData.memberIds;
+    }
+
+    match /studies/{studyId} {
+      // 로그인한 사용자는 누구나 읽을 수 있어야 초대 링크로 스터디 정보를 미리 볼 수 있음
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      // 멤버는 참여(memberIds, members 갱신) 가능, 방장만 이름/설명 수정 가능
+      allow update: if isMember(resource.data);
+      allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+
+      match /goals/{goalId} {
+        allow read, write: if isSignedIn() &&
+          isMember(get(/databases/$(database)/documents/studies/$(studyId)).data);
+      }
+
+      match /schedules/{scheduleId} {
+        allow read, write: if isSignedIn() &&
+          isMember(get(/databases/$(database)/documents/studies/$(studyId)).data);
+
+        match /attendances/{uid} {
+          allow read: if isSignedIn() &&
+            isMember(get(/databases/$(database)/documents/studies/$(studyId)).data);
+          // 본인 출석만 직접 체크/취소 가능
+          allow write: if isSignedIn() && request.auth.uid == uid;
+        }
+      }
+    }
+  }
+}
